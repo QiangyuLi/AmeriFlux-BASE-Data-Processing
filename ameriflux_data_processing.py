@@ -1,4 +1,30 @@
 """
+ameriflux_data_processing.py
+Key Features:
+2. Extract relevant columns for processing.
+4. Handle missing date values by substituting GROUP_ID as a replacement.
+- Load the Excel file containing AmeriFlux BASE data.
+- Filter the dataset to include only relevant columns: SITE_ID, GROUP_ID, VARIABLE_GROUP, VARIABLE, and DATAVALUE.
+- Extract and organize date information for each GROUP_ID.
+- Process each VARIABLE_GROUP independently:
+    - Extract data for the group.
+    - Merge date information and other variables into a structured format.
+    - Reorder columns to prioritize GROUP_ID and date columns.
+    - Sort data by GROUP_ID and handle numeric conversion where applicable.
+    - Save the processed data as a CSV file in the output directory.
+- Display a sample of the processed data for verification.
+Output:
+- A directory named "processed_data" containing CSV files for each VARIABLE_GROUP.
+- Each CSV file is structured with GROUP_ID, date columns, and other variables.
+Dependencies:
+- pandas: For data manipulation and processing.
+- os: For directory and file handling.
+Usage:
+- Update the `file_path` variable with the correct path to the AmeriFlux BASE Excel file.
+- Run the script to process the data and generate CSV files in the "processed_data" directory.
+Note:
+- Ensure the input Excel file contains a sheet named "AMF-BIF".
+- Handle missing or malformed data gracefully during processing.
 This script processes the AmeriFlux BASE data by extracting, restructuring, and saving data
 from the dataset. The script groups data by VARIABLE_GROUP, aligns date values, and exports
 each group as a separate CSV file. If a group lacks a date column, the GROUP_ID is used instead.
