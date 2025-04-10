@@ -25,43 +25,98 @@ df = pd.read_excel(file_path, sheet_name="AMF-BIF")
 # Extract relevant columns
 df_filtered = df[["SITE_ID", "GROUP_ID", "VARIABLE_GROUP", "VARIABLE", "DATAVALUE"]]
 
-# Extract date values from all VARIABLE_GROUP categories
-df_dates = df_filtered[df_filtered["VARIABLE"].str.contains("DATE", na=False)][["GROUP_ID", "DATAVALUE"]]
-df_dates.rename(columns={"DATAVALUE": "DATE"}, inplace=True)
+# Create a dictionary to store date information by GROUP_ID
+date_info = {}
 
-# Merge dates with main data
-df_merged = df_filtered.merge(df_dates, on="GROUP_ID", how="left")
+# Process date information first
+date_rows = df_filtered[df_filtered["VARIABLE"].str.contains("DATE", na=False)]
+for _, row in date_rows.iterrows():
+    group_id = row["GROUP_ID"]
+    variable = row["VARIABLE"]
+    value = row["DATAVALUE"]
+    
+    if group_id not in date_info:
+        date_info[group_id] = {}
+    
+    date_info[group_id][variable] = value
 
-# Rename columns to avoid KeyError due to column duplication
-df_merged.rename(columns={"VARIABLE": "VARIABLE_x"}, inplace=True)
-
-# Replace missing DATE values with GROUP_ID
-# Ensuring GROUP_ID is used properly for missing DATE values without triggering warnings
-df_merged.loc[:, "DATE"] = df_merged["DATE"].fillna(df_merged["GROUP_ID"].astype(str))
-
-# Remove date rows to avoid redundancy
-df_cleaned = df_merged[~df_merged["VARIABLE_x"].str.contains("DATE", na=False)]
-
-# Ensure no issues with unique values retrieval
-if "VARIABLE_GROUP" in df_cleaned.columns:
-    variable_groups = df_cleaned["VARIABLE_GROUP"].unique()
-else:
-    variable_groups = []
+# Create a directory to store output files
+output_dir = "processed_data"
+os.makedirs(output_dir, exist_ok=True)
 
 # Process each VARIABLE_GROUP separately
-for group in variable_groups:
-    df_group = df_cleaned[df_cleaned["VARIABLE_GROUP"] == group]
-    df_pivot = df_group.pivot_table(index=["DATE"], columns="VARIABLE_x", values="DATAVALUE", aggfunc="first")
-    df_pivot.reset_index(inplace=True)
-    df_pivot.rename(columns={"DATE": "GROUP_ID"}, inplace=True)
+for group in df_filtered["VARIABLE_GROUP"].unique():
+    print(f"Processing {group}...")
     
-    # Convert GROUP_ID to numeric when possible and sort numerically
-    df_pivot["GROUP_ID"] = pd.to_numeric(df_pivot["GROUP_ID"], errors='coerce')
-    df_pivot.sort_values(by="GROUP_ID", ascending=True, inplace=True)
-    df_pivot["GROUP_ID"] = df_pivot["GROUP_ID"].astype(str)  # Convert back to string for consistency
+    # Filter data for the current group
+    df_group = df_filtered[df_filtered["VARIABLE_GROUP"] == group]
     
-    # Save the processed data to a CSV file
-    file_name = f"{group}.csv"
-    df_pivot.to_csv(file_name, index=False)
-    print(f"Data processing complete. Saved as {file_name}")
+    # Get unique GROUP_IDs for this variable group
+    group_ids = df_group["GROUP_ID"].unique()
+    
+    # Create a list to store processed rows
+    processed_rows = []
+    
+    for group_id in group_ids:
+        # Get data for this GROUP_ID
+        df_id = df_group[df_group["GROUP_ID"] == group_id]
+        
+        # Create a dictionary for this row
+        row_dict = {"GROUP_ID": group_id}
+        
+        # Add date information if available
+        if group_id in date_info:
+            for date_var, date_val in date_info[group_id].items():
+                row_dict[date_var] = date_val
+        
+        # Add non-date variables
+        for _, row in df_id[~df_id["VARIABLE"].str.contains("DATE", na=False, regex=True)].iterrows():
+            variable = row["VARIABLE"]
+            value = row["DATAVALUE"]
+            row_dict[variable] = value
+        
+        # Add to processed rows
+        processed_rows.append(row_dict)
+    
+    # Create DataFrame from processed rows
+    if processed_rows:
+        result_df = pd.DataFrame(processed_rows)
+        
+        # Reorder columns to put GROUP_ID first, followed by date columns, then other variables
+        cols = ["GROUP_ID"]
+        date_cols = [col for col in result_df.columns if "DATE" in col]
+        other_cols = [col for col in result_df.columns if col != "GROUP_ID" and col not in date_cols]
+        
+        # Combine columns in the desired order
+        ordered_cols = cols + date_cols + other_cols
+        
+        # Filter to only include columns that actually exist in the DataFrame
+        ordered_cols = [col for col in ordered_cols if col in result_df.columns]
+        
+        # Reorder columns
+        result_df = result_df[ordered_cols]
+        
+        # Sort by GROUP_ID
+        try:
+            result_df["GROUP_ID"] = pd.to_numeric(result_df["GROUP_ID"], errors='coerce')
+            result_df.sort_values(by="GROUP_ID", inplace=True)
+            result_df["GROUP_ID"] = result_df["GROUP_ID"].fillna(0).astype(int).astype(str)
+        except:
+            result_df.sort_values(by="GROUP_ID", inplace=True)
+        
+        # Write to CSV
+        output_file = os.path.join(output_dir, f"{group}.csv")
+        result_df.to_csv(output_file, index=False)
+        print(f"  - Created {output_file} with {len(result_df)} rows and {len(result_df.columns)} columns")
+    else:
+        print(f"  - No data to process for {group}")
 
+print(f"\nProcessing complete. Results saved to the '{output_dir}' directory.")
+
+# Optional: Display sample of a processed file to verify format
+sample_group = df_filtered["VARIABLE_GROUP"].unique()[0]
+sample_file = os.path.join(output_dir, f"{sample_group}.csv")
+if os.path.exists(sample_file):
+    print(f"\nSample of {sample_file}:")
+    sample_df = pd.read_csv(sample_file)
+    print(sample_df.head())
